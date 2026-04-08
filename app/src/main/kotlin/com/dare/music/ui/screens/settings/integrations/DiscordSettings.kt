@@ -1008,7 +1008,7 @@ fun RichPresence(
                         val intent =
                             Intent(
                                 Intent.ACTION_VIEW,
-                                "https://github.com/t4ulquiorra/Dare".toUri(),
+                                "https://github.com/t4ulquiorra/Dare-Music".toUri(),
                             )
                         context.startActivity(intent)
                     },

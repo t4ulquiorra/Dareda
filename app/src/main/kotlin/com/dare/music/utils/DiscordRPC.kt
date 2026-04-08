@@ -62,7 +62,7 @@ class DiscordRPC(
                 button2Text.ifEmpty { "Visit Dare" },
                 song
             )
-            buttonsList.add(resolvedText to "https://github.com/t4ulquiorra/Dare")
+            buttonsList.add(resolvedText to "https://github.com/t4ulquiorra/Dare-Music")
         }
 
         val type = when (activityType) {
