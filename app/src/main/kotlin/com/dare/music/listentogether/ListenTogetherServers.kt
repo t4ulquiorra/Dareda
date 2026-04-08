@@ -20,10 +20,10 @@ object ListenTogetherServers {
     private const val ServersJson = """
         [
           {
-            "name": "The Meowery",
-            "url": "wss://metroserverx.meowery.eu/ws",
-            "location": "Poland",
-            "operator": "Nyx"
+            "name": "Dare Server",
+            "url": "wss://dare-server-4l9f.onrender.com",
+            "location": "US",
+            "operator": "T4 Ulquiorra"
           }
         ]
     """
