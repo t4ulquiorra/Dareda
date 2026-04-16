@@ -15,8 +15,6 @@ import androidx.room.Room
 import com.dare.music.constants.MaxSongCacheSizeKey
 import com.dare.music.db.InternalDatabase
 import com.dare.music.db.MusicDatabase
-import com.dare.music.listentogether.ListenTogetherClient
-import com.dare.music.listentogether.ListenTogetherManager
 import com.dare.music.utils.dataStore
 import com.dare.music.utils.get
 import dagger.Module
@@ -99,15 +97,3 @@ object AppModule {
     }
 
     @Singleton
-    @Provides
-    fun provideListenTogetherClient(
-        @ApplicationContext context: Context,
-    ): ListenTogetherClient = ListenTogetherClient(context)
-
-    @Singleton
-    @Provides
-    fun provideListenTogetherManager(
-        @ApplicationContext context: Context,
-        client: ListenTogetherClient,
-    ): ListenTogetherManager = ListenTogetherManager(client, context)
-}

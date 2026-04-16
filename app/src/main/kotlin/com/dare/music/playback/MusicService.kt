@@ -160,7 +160,6 @@ import com.dare.music.extensions.toEnum
 import com.dare.music.extensions.toMediaItem
 import com.dare.music.extensions.toPersistQueue
 import com.dare.music.extensions.toQueue
-import com.dare.music.lyrics.LyricsHelper
 import com.dare.music.models.PersistPlayerState
 import com.dare.music.models.PersistQueue
 import com.dare.music.models.toMediaMetadata
@@ -231,11 +230,11 @@ class MusicService :
     PlaybackStatsListener.Callback {
     @Inject
     lateinit var database: MusicDatabase
+    @Inject
 
+    @Inject
     @Inject
     lateinit var lyricsHelper: LyricsHelper
-
-    @Inject
     lateinit var syncUtils: SyncUtils
 
     @Inject
