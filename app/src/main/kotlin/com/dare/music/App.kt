@@ -2,7 +2,6 @@
  * Dare Project (C) 2026
  * Licensed under GPL-3.0 | See git history for contributors
  */
-
 package com.dare.music
 
 import android.app.Application
@@ -23,17 +22,13 @@ import coil3.request.allowHardware
 import coil3.request.crossfade
 import com.dare.innertube.YouTube
 import com.dare.innertube.models.YouTubeLocale
-import com.dare.kugou.KuGou
-import com.dare.lastfm.LastFM
 import com.dare.music.BuildConfig
 import com.dare.music.constants.*
 import com.dare.music.di.ApplicationScope
 import com.dare.music.extensions.toEnum
 import com.dare.music.extensions.toInetSocketAddress
-import com.dare.music.utils.CrashHandler
 import com.dare.music.utils.cipher.CipherDeobfuscator
 import com.dare.music.utils.dataStore
-import com.dare.music.utils.reportException
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,15 +57,11 @@ class App :
     override fun onCreate() {
         super.onCreate()
 
-        // Install crash handler first
-        CrashHandler.install(this)
-
         // Initialize cipher deobfuscator for WEB_REMIX streaming
         CipherDeobfuscator.initialize(this)
 
         Timber.plant(Timber.DebugTree())
 
-        // تهيئة إعدادات التطبيق عند الإقلاع
         applicationScope.launch {
             initializeSettings()
             observeSettingsChanges()
@@ -94,16 +85,6 @@ class App :
                         ?: languageTag.takeIf { it in LanguageCodeToName }
                         ?: "en",
             )
-
-        if (languageTag == "zh-TW") {
-            KuGou.useTraditionalChinese = true
-        }
-
-        // Initialize LastFM with API keys from BuildConfig (GitHub Secrets)
-        LastFM.initialize(
-            apiKey = BuildConfig.LASTFM_API_KEY.takeIf { it.isNotEmpty() } ?: "",
-            secret = BuildConfig.LASTFM_SECRET.takeIf { it.isNotEmpty() } ?: "",
-        )
 
         if (settings[ProxyEnabledKey] == true) {
             val username = settings[ProxyUsernameKey].orEmpty()
@@ -130,7 +111,6 @@ class App :
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@App, getString(R.string.failed_to_parse_proxy), Toast.LENGTH_SHORT).show()
                 }
-                reportException(e)
             }
         }
 
@@ -193,19 +173,6 @@ class App :
 
         applicationScope.launch(Dispatchers.IO) {
             dataStore.data
-                .map { it[LastFMSessionKey] }
-                .distinctUntilChanged()
-                .collect { session ->
-                    try {
-                        LastFM.sessionKey = session
-                    } catch (e: Exception) {
-                        Timber.e("Error while loading last.fm session key. %s", e.message)
-                    }
-                }
-        }
-
-        applicationScope.launch(Dispatchers.IO) {
-            dataStore.data
                 .map { Triple(it[ContentCountryKey], it[ContentLanguageKey], it[AppLanguageKey]) }
                 .distinctUntilChanged()
                 .collect { (contentCountry, contentLanguage, appLanguage) ->
@@ -243,7 +210,6 @@ class App :
             .apply {
                 crossfade(true)
                 allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                // Memory cache for fast image loading (prevents network requests on recomposition)
                 memoryCache {
                     MemoryCache
                         .Builder()
@@ -260,7 +226,6 @@ class App :
                             .maxSizeBytes(cacheSize * 1024 * 1024L)
                             .build(),
                     )
-                    // Allow reading from disk cache as fallback when network is unavailable
                     networkCachePolicy(CachePolicy.ENABLED)
                 }
             }.build()
@@ -269,9 +234,6 @@ class App :
     companion object {
         suspend fun forgetAccount(context: Context) {
             Timber.d("forgetAccount: Starting logout process")
-
-            // Clear DataStore preferences
-            Timber.d("forgetAccount: Clearing DataStore preferences")
             context.dataStore.edit { settings ->
                 settings.remove(InnerTubeCookieKey)
                 settings.remove(VisitorDataKey)
@@ -280,33 +242,15 @@ class App :
                 settings.remove(AccountEmailKey)
                 settings.remove(AccountChannelHandleKey)
             }
-            Timber.d("forgetAccount: DataStore preferences cleared")
-
-            // Immediately clear YouTube object's auth state
-            Timber.d("forgetAccount: Clearing YouTube object auth state")
-            Timber.d(
-                "forgetAccount: Before - cookie=${YouTube.cookie?.take(
-                    50,
-                )}, visitorData=${YouTube.visitorData?.take(20)}, dataSyncId=${YouTube.dataSyncId?.take(20)}",
-            )
             YouTube.cookie = null
             YouTube.visitorData = null
             YouTube.dataSyncId = null
-            Timber.d(
-                "forgetAccount: After - cookie=${YouTube.cookie}, visitorData=${YouTube.visitorData}, dataSyncId=${YouTube.dataSyncId}",
-            )
-
-            // Clear WebView cookies to prevent auto-relogin
-            Timber.d("forgetAccount: Clearing WebView CookieManager")
             withContext(Dispatchers.Main) {
                 android.webkit.CookieManager.getInstance().apply {
-                    removeAllCookies { removed ->
-                        Timber.d("forgetAccount: CookieManager.removeAllCookies callback: removed=$removed")
-                    }
+                    removeAllCookies { }
                     flush()
                 }
             }
-            Timber.d("forgetAccount: Logout process complete")
         }
     }
 }
