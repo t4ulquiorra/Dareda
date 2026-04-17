@@ -6,6 +6,7 @@
 @file:Suppress("DEPRECATION")
 
 package com.dare.music.playback
+import com.dare.music.lyrics.LyricsHelper
 
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
