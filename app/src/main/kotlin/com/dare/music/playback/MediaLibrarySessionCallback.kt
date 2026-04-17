@@ -4,6 +4,7 @@
  */
 
 package com.dare.music.playback
+import com.dare.music.playback.MusicService
 
 import android.content.ContentResolver
 import android.content.Context

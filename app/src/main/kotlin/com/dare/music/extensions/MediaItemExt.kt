@@ -13,6 +13,7 @@ import com.dare.innertube.models.SongItem
 import com.dare.music.db.entities.Song
 import com.dare.music.models.MediaMetadata
 import com.dare.music.models.toMediaMetadata
+import com.dare.music.utils.resize
 
 val MediaItem.metadata: MediaMetadata?
     get() = localConfiguration?.tag as? MediaMetadata
