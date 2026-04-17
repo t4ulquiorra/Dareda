@@ -6,7 +6,6 @@
 @file:Suppress("DEPRECATION")
 
 package com.dare.music.playback
-import com.dare.music.lyrics.LyricsHelper
 
 import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
@@ -146,9 +145,6 @@ import com.dare.music.db.entities.RelatedSongMap
 import com.dare.music.db.entities.Song
 import com.dare.music.di.DownloadCache
 import com.dare.music.di.PlayerCache
-import com.dare.music.eq.EqualizerService
-import com.dare.music.eq.audio.CustomEqualizerAudioProcessor
-import com.dare.music.eq.data.EQProfileRepository
 import com.dare.music.extensions.SilentHandler
 import com.dare.music.extensions.collect
 import com.dare.music.extensions.collectLatest
@@ -182,8 +178,6 @@ import com.dare.music.utils.YTPlayerUtils
 import com.dare.music.utils.dataStore
 import com.dare.music.utils.get
 import com.dare.music.utils.reportException
-import com.dare.music.widget.DareWidgetManager
-import com.dare.music.widget.MusicWidgetReceiver
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -231,27 +225,16 @@ class MusicService :
     PlaybackStatsListener.Callback {
     @Inject
     lateinit var database: MusicDatabase
-    @Inject
 
     @Inject
-    @Inject
-    lateinit var lyricsHelper: LyricsHelper
     lateinit var syncUtils: SyncUtils
 
     @Inject
     lateinit var mediaLibrarySessionCallback: MediaLibrarySessionCallback
 
-    @Inject
-    lateinit var equalizerService: EqualizerService
 
-    @Inject
-    lateinit var eqProfileRepository: EQProfileRepository
 
-    @Inject
-    lateinit var widgetManager: DareWidgetManager
 
-    @Inject
-    lateinit var listenTogetherManager: com.dare.music.listentogether.ListenTogetherManager
 
     private lateinit var audioManager: AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
@@ -340,11 +323,9 @@ class MusicService :
 
     lateinit var sleepTimer: SleepTimer
 
-    @Inject
     @PlayerCache
     lateinit var playerCache: SimpleCache
 
-    @Inject
     @DownloadCache
     lateinit var downloadCache: SimpleCache
 
@@ -586,21 +567,9 @@ class MusicService :
 
         // Update lyrics provider order preference
         // Collecting this flow activates the internal map that updates lyricsProviders in LyricsHelper
-        lyricsHelper.preferred.collectLatest(scope) {}
 
         // 4. Watch for EQ profile changes
         scope.launch {
-            eqProfileRepository.activeProfile.collect { profile ->
-                if (profile != null) {
-                    val result = equalizerService.applyProfile(profile)
-                    if (result.isSuccess && player.playbackState == Player.STATE_READY && player.isPlaying) {
-                        // Instant update: flush buffers and seek slightly to re-process audio
-                        // Small seek to force re-buffer through the new EQ settings
-                        // Seek to current position effectively resets the pipeline
-                        player.seekTo(player.currentPosition)
-                    }
-                } else {
-                    equalizerService.disable()
                     if (player.playbackState == Player.STATE_READY && player.isPlaying) {
                         player.seekTo(player.currentPosition)
                     }
@@ -711,7 +680,6 @@ class MusicService :
 
         currentSong.debounce(1000).collect(scope) { song ->
             updateNotification()
-            updateWidgetUI(player.isPlaying)
         }
 
         combine(
@@ -724,7 +692,6 @@ class MusicService :
                     .lyrics(mediaMetadata.id)
                     .first() == null
             ) {
-                val lyricsWithProvider = lyricsHelper.getLyrics(mediaMetadata)
                 database.query {
                     upsert(
                         LyricsEntity(
@@ -878,7 +845,6 @@ class MusicService :
                     prefs[CrossfadeGaplessKey] ?: true,
                 )
             },
-            listenTogetherManager.roomState,
         ) { (enabled, duration, gapless), roomState ->
             // Disable crossfade if user is in a listen together room
             Triple(enabled && roomState == null, duration, gapless)
@@ -1002,7 +968,6 @@ class MusicService :
 
     private fun createExoPlayer(): ExoPlayer {
         val eqProcessor = CustomEqualizerAudioProcessor()
-        equalizerService.addAudioProcessor(eqProcessor)
 
         val silenceProcessor = SilenceDetectorAudioProcessor { handleLongSilenceDetected() }
 
@@ -2225,11 +2190,8 @@ class MusicService :
 
         // Widget and Discord RPC updates
         if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED)) {
-            updateWidgetUI(player.isPlaying)
             if (player.isPlaying) {
-                startWidgetUpdates()
             } else {
-                stopWidgetUpdates()
             }
             if (!player.isPlaying &&
                 !events.containsAny(
@@ -3283,7 +3245,6 @@ class MusicService :
 
             MusicWidgetReceiver.ACTION_PLAY_PAUSE -> {
                 if (player.isPlaying) player.pause() else player.play()
-                updateWidgetUI(player.isPlaying)
             }
 
             MusicWidgetReceiver.ACTION_LIKE -> {
@@ -3292,16 +3253,13 @@ class MusicService :
 
             MusicWidgetReceiver.ACTION_NEXT -> {
                 player.seekToNext()
-                updateWidgetUI(player.isPlaying)
             }
 
             MusicWidgetReceiver.ACTION_PREVIOUS -> {
                 player.seekToPrevious()
-                updateWidgetUI(player.isPlaying)
             }
 
             MusicWidgetReceiver.ACTION_UPDATE_WIDGET -> {
-                updateWidgetUI(player.isPlaying)
             }
         }
 
@@ -3401,48 +3359,6 @@ class MusicService :
     /**
      * Updates all app widgets with current playback state
      */
-    private fun updateWidgetUI(isPlaying: Boolean) {
-        scope.launch {
-            try {
-                val songData = currentSong.value
-                val song = songData?.song
-                val songTitle = song?.title ?: getString(R.string.no_song_playing)
-                val artistName = songData?.artists?.joinToString(", ") { it.name } ?: getString(R.string.tap_to_open)
-                val isLiked = songData?.song?.liked == true
-
-                widgetManager.updateWidgets(
-                    title = songTitle,
-                    artist = artistName,
-                    artworkUri = song?.thumbnailUrl,
-                    isPlaying = isPlaying,
-                    isLiked = isLiked,
-                    duration = if (player.duration != C.TIME_UNSET) player.duration else 0,
-                    currentPosition = player.currentPosition,
-                )
-            } catch (e: Exception) {
-                // Widget not added to home screen or other error
-            }
-        }
-    }
-
-    private var widgetUpdateJob: Job? = null
-
-    private fun startWidgetUpdates() {
-        widgetUpdateJob?.cancel()
-        widgetUpdateJob =
-            scope.launch {
-                while (isActive) {
-                    if (player.isPlaying) {
-                        updateWidgetUI(true)
-                    }
-                    delay(200)
-                }
-            }
-    }
-
-    private fun stopWidgetUpdates() {
-        widgetUpdateJob?.cancel()
-        widgetUpdateJob = null
     }
 
     private fun shareSong() {
