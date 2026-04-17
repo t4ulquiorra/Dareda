@@ -55,7 +55,6 @@ import com.dare.music.extensions.reversed
 import com.dare.music.extensions.toSQLiteQuery
 import com.dare.music.models.MediaMetadata
 import com.dare.music.models.toMediaMetadata
-import com.dare.music.ui.utils.resize
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map

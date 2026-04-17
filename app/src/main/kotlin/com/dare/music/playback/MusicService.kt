@@ -80,7 +80,6 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.dare.innertube.YouTube
 import com.dare.innertube.models.SongItem
 import com.dare.innertube.models.WatchEndpoint
-import com.dare.lastfm.LastFM
 import com.dare.music.MainActivity
 import com.dare.music.R
 import com.dare.music.constants.AndroidAutoTargetPlaylistKey
@@ -94,24 +93,17 @@ import com.dare.music.constants.CrossfadeDurationKey
 import com.dare.music.constants.CrossfadeEnabledKey
 import com.dare.music.constants.CrossfadeGaplessKey
 import com.dare.music.constants.DisableLoadMoreWhenRepeatAllKey
-import com.dare.music.constants.DiscordActivityNameKey
-import com.dare.music.constants.DiscordActivityTypeKey
-import com.dare.music.constants.DiscordAdvancedModeKey
 import com.dare.music.constants.DiscordAvatarKey
 import com.dare.music.constants.DiscordButton1TextKey
 import com.dare.music.constants.DiscordButton1VisibleKey
 import com.dare.music.constants.DiscordButton2TextKey
 import com.dare.music.constants.DiscordButton2VisibleKey
 import com.dare.music.constants.DiscordStatusKey
-import com.dare.music.constants.DiscordTokenKey
 import com.dare.music.constants.DiscordUseDetailsKey
-import com.dare.music.constants.EnableDiscordRPCKey
-import com.dare.music.constants.EnableLastFMScrobblingKey
 import com.dare.music.constants.EnableSongCacheKey
 import com.dare.music.constants.HideExplicitKey
 import com.dare.music.constants.HideVideoSongsKey
 import com.dare.music.constants.HistoryDuration
-import com.dare.music.constants.LastFMUseNowPlaying
 import com.dare.music.constants.MediaSessionConstants
 import com.dare.music.constants.MediaSessionConstants.CommandAddToTargetPlaylist
 import com.dare.music.constants.MediaSessionConstants.CommandToggleLike
@@ -127,9 +119,6 @@ import com.dare.music.constants.PreventDuplicateTracksInQueueKey
 import com.dare.music.constants.RememberShuffleAndRepeatKey
 import com.dare.music.constants.RepeatModeKey
 import com.dare.music.constants.ResumeOnBluetoothConnectKey
-import com.dare.music.constants.ScrobbleDelayPercentKey
-import com.dare.music.constants.ScrobbleDelaySecondsKey
-import com.dare.music.constants.ScrobbleMinSongDurationKey
 import com.dare.music.constants.ShowLyricsKey
 import com.dare.music.constants.ShuffleModeKey
 import com.dare.music.constants.ShufflePlaylistFirstKey
@@ -170,9 +159,7 @@ import com.dare.music.playback.queues.YouTubeQueue
 import com.dare.music.playback.queues.filterExplicit
 import com.dare.music.playback.queues.filterVideoSongs
 import com.dare.music.utils.CoilBitmapLoader
-import com.dare.music.utils.DiscordRPC
 import com.dare.music.utils.NetworkConnectivityObserver
-import com.dare.music.utils.ScrobbleManager
 import com.dare.music.utils.SyncUtils
 import com.dare.music.utils.YTPlayerUtils
 import com.dare.music.utils.dataStore
@@ -353,11 +340,9 @@ class MusicService :
     private var isAudioEffectSessionOpened = false
     private var loudnessEnhancer: LoudnessEnhancer? = null
 
-    private var discordRpc: DiscordRPC? = null
     private var lastPlaybackSpeed = 1.0f
     private var discordUpdateJob: kotlinx.coroutines.Job? = null
 
-    private var scrobbleManager: ScrobbleManager? = null
 
     val automixItems = MutableStateFlow<List<MediaItem>>(emptyList())
 
@@ -385,7 +370,6 @@ class MusicService :
     private var failedSongsClearJob: Job? = null
 
     // Google Cast support
-    var castConnectionHandler: CastConnectionHandler? = null
         private set
 
     private val screenStateReceiver =
@@ -398,7 +382,6 @@ class MusicService :
                     Intent.ACTION_SCREEN_OFF -> {
                         if (!player.isPlaying) {
                             scope.launch(Dispatchers.IO) {
-                                discordRpc?.closeRPC()
                             }
                         }
                     }
@@ -407,7 +390,6 @@ class MusicService :
                         if (player.isPlaying) {
                             scope.launch {
                                 currentSong.value?.let { song ->
-                                    updateDiscordRPC(song)
                                 }
                             }
                         }
@@ -588,7 +570,6 @@ class MusicService :
                     val mediaId = player.currentMetadata?.id
                     if (mediaId != null) {
                         database.song(mediaId).first()?.let { song ->
-                            updateDiscordRPC(song)
                         }
                     }
                 }
@@ -752,15 +733,10 @@ class MusicService :
             .debounce(300)
             .distinctUntilChanged()
             .collect(scope) { (key, enabled) ->
-                if (discordRpc?.isRpcRunning() == true) {
-                    discordRpc?.closeRPC()
                 }
-                discordRpc = null
                 if (key != null && enabled) {
-                    discordRpc = DiscordRPC(this, key)
                     if (player.playbackState == Player.STATE_READY && player.playWhenReady) {
                         currentSong.value?.let {
-                            updateDiscordRPC(it, true)
                         }
                     }
                 }
@@ -785,7 +761,6 @@ class MusicService :
             .collect(scope) {
                 if (player.playbackState == Player.STATE_READY) {
                     currentSong.value?.let { song ->
-                        updateDiscordRPC(song, true)
                     }
                 }
             }
@@ -795,22 +770,17 @@ class MusicService :
             .debounce(300)
             .distinctUntilChanged()
             .collect(scope) { enabled ->
-                if (enabled && scrobbleManager == null) {
                     val delayPercent = dataStore.get(ScrobbleDelayPercentKey, LastFM.DEFAULT_SCROBBLE_DELAY_PERCENT)
                     val minSongDuration =
                         dataStore.get(ScrobbleMinSongDurationKey, LastFM.DEFAULT_SCROBBLE_MIN_SONG_DURATION)
                     val delaySeconds = dataStore.get(ScrobbleDelaySecondsKey, LastFM.DEFAULT_SCROBBLE_DELAY_SECONDS)
-                    scrobbleManager =
                         ScrobbleManager(
                             scope,
                             minSongDuration = minSongDuration,
                             scrobbleDelayPercent = delayPercent,
                             scrobbleDelaySeconds = delaySeconds,
                         )
-                    scrobbleManager?.useNowPlaying = dataStore.get(LastFMUseNowPlaying, false)
                 } else if (!enabled && scrobbleManager != null) {
-                    scrobbleManager?.destroy()
-                    scrobbleManager = null
                 }
             }
 
@@ -818,7 +788,6 @@ class MusicService :
             .map { it[LastFMUseNowPlaying] ?: false }
             .distinctUntilChanged()
             .collectLatest(scope) {
-                scrobbleManager?.useNowPlaying = it
             }
 
         dataStore.data
@@ -830,7 +799,6 @@ class MusicService :
                 )
             }.distinctUntilChanged()
             .collect(scope) { (delayPercent, minSongDuration, delaySeconds) ->
-                scrobbleManager?.let {
                     it.scrobbleDelayPercent = delayPercent
                     it.minSongDuration = minSongDuration
                     it.scrobbleDelaySeconds = delaySeconds
@@ -967,7 +935,6 @@ class MusicService :
     }
 
     private fun createExoPlayer(): ExoPlayer {
-        val eqProcessor = CustomEqualizerAudioProcessor()
 
         val silenceProcessor = SilenceDetectorAudioProcessor { handleLongSilenceDetected() }
 
@@ -982,7 +949,7 @@ class MusicService :
             ExoPlayer
                 .Builder(this)
                 .setMediaSourceFactory(createMediaSourceFactory())
-                .setRenderersFactory(createRenderersFactory(eqProcessor, silenceProcessor))
+                .setRenderersFactory(createRenderersFactory(silenceProcessor))
                 .setHandleAudioBecomingNoisy(true)
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .setAudioAttributes(
@@ -1044,7 +1011,6 @@ class MusicService :
                         delay(300)
                         if (hasAudioFocus && wasPlayingBeforeAudioFocusLoss && !player.isPlaying) {
                             // Don't start local playback if casting
-                            if (castConnectionHandler?.isCasting?.value != true) {
                                 player.play()
                             }
                             wasPlayingBeforeAudioFocusLoss = false
@@ -1186,7 +1152,6 @@ class MusicService :
             player.seekTo(nextWindowIndex, C.TIME_UNSET)
             player.prepare()
             // Don't start local playback if casting
-            if (castConnectionHandler?.isCasting?.value != true) {
                 player.play()
             }
             return
@@ -1609,7 +1574,6 @@ class MusicService :
             player.setMediaItems(items)
             player.prepare()
             // Don't start local playback if casting
-            if (castConnectionHandler?.isCasting?.value != true) {
                 player.play()
             }
             return
@@ -2038,25 +2002,19 @@ class MusicService :
 
         discordUpdateJob?.cancel()
 
-        scrobbleManager?.onSongStop()
         if (player.playWhenReady && player.playbackState == Player.STATE_READY) {
-            scrobbleManager?.onSongStart(player.currentMetadata, duration = player.duration)
         }
 
         // Sync Cast when media changes and Cast is connected
         // Skip if this change was triggered by Cast sync (to prevent loops)
-        if (castConnectionHandler?.isCasting?.value == true &&
-            castConnectionHandler?.isSyncingFromCast != true &&
             mediaItem != null
         ) {
             val metadata = mediaItem.metadata
             if (metadata != null) {
                 // Try to navigate to the item if it's already in Cast queue
                 // This avoids a full reload which causes the widget to refresh
-                val navigated = castConnectionHandler?.navigateToMediaIfInQueue(metadata.id) ?: false
                 if (!navigated) {
                     // Item not in Cast queue, need to reload
-                    castConnectionHandler?.loadMedia(metadata)
                 }
             }
         }
@@ -2125,7 +2083,6 @@ class MusicService :
         }
 
         if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
-            scrobbleManager?.onSongStop()
         }
     }
 
@@ -2134,7 +2091,6 @@ class MusicService :
         reason: Int,
     ) {
         // Safety net: if local player tries to start while casting, immediately pause it
-        if (playWhenReady && castConnectionHandler?.isCasting?.value == true) {
             player.pause()
             return
         }
@@ -2200,7 +2156,6 @@ class MusicService :
                 )
             ) {
                 scope.launch {
-                    discordRpc?.close()
                 }
             }
         }
@@ -2216,7 +2171,6 @@ class MusicService :
                 scope.launch {
                     // Fetch song from database to get full info
                     database.song(mediaId).first()?.let { song ->
-                        updateDiscordRPC(song)
                     }
                 }
             }
@@ -2224,7 +2178,6 @@ class MusicService :
 
         // Scrobbling
         if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED)) {
-            scrobbleManager?.onPlayerStateChanged(player.isPlaying, player.currentMetadata, duration = player.duration)
         }
     }
 
@@ -2327,7 +2280,6 @@ class MusicService :
                     delay(1000)
                     if (player.playWhenReady && player.playbackState == Player.STATE_READY) {
                         currentSong.value?.let { song ->
-                            updateDiscordRPC(song)
                         }
                     }
                 }
@@ -2612,7 +2564,6 @@ class MusicService :
                         if (wasPlayingBeforeAudioFocusLoss) {
                             delay(500) // Brief delay to allow renderer to be ready
                             if (hasAudioFocus && playerInitialized.value) {
-                                if (castConnectionHandler?.isCasting?.value != true) {
                                     player.play()
                                 }
                             }
@@ -2781,7 +2732,6 @@ class MusicService :
                 player.pause()
             }
         } else if (volume > 0 && !muted && pauseOnMute) {
-            if (wasPlayingBeforeVolumeMute && !player.isPlaying && castConnectionHandler?.isCasting?.value != true) {
                 wasPlayingBeforeVolumeMute = false
                 isPausedByVolumeMute = false
                 player.play()
@@ -2864,7 +2814,6 @@ class MusicService :
         }
     }
 
-    private fun updateDiscordRPC(
         song: Song,
         showFeedback: Boolean = false,
     ) {
@@ -3036,7 +2985,6 @@ class MusicService :
         )
 
     private fun createRenderersFactory(
-        eqProcessor: CustomEqualizerAudioProcessor,
         silenceProcessor: SilenceDetectorAudioProcessor,
     ) = object : DefaultRenderersFactory(this) {
         override fun buildAudioSink(
@@ -3051,7 +2999,6 @@ class MusicService :
                 DefaultAudioSink.DefaultAudioProcessorChain(
                     // 2. Inject processor into audio pipeline
                     arrayOf(
-                        eqProcessor,
                         silenceProcessor,
                     ),
                     SilenceSkippingAudioProcessor(2_000_000, 20_000, 256),
@@ -3200,14 +3147,10 @@ class MusicService :
             // Ignore
         }
         audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
-        castConnectionHandler?.release()
         if (dataStore.get(PersistentQueueKey, true)) {
             saveQueueToDisk()
         }
-        if (discordRpc?.isRpcRunning() == true) {
-            discordRpc?.closeRPC()
         }
-        discordRpc = null
         connectivityObserver.unregister()
         abandonAudioFocus()
         releaseLoudnessEnhancer()
@@ -3405,8 +3348,6 @@ class MusicService :
     private fun initializeCast() {
         if (dataStore.get(com.dare.music.constants.EnableGoogleCastKey, true)) {
             try {
-                castConnectionHandler = CastConnectionHandler(this, scope, this)
-                castConnectionHandler?.initialize()
                 timber.log.Timber.d("Google Cast initialized")
             } catch (e: Exception) {
                 timber.log.Timber.e(e, "Failed to initialize Google Cast")

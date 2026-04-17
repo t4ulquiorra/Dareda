@@ -59,11 +59,7 @@ import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
 import javax.inject.Inject
-import com.dare.music.constants.AndroidAutoSectionsOrderKey
 import com.dare.music.constants.AndroidAutoYouTubePlaylistsKey
-import com.dare.music.ui.screens.settings.AndroidAutoSection
-import com.dare.music.ui.screens.settings.deserializeSections
-import com.dare.music.ui.screens.settings.serializeSections
 
 class MediaLibrarySessionCallback
 @Inject
@@ -163,53 +159,43 @@ constructor(
             LibraryResult.ofItemList(
                 when (parentId) {
                     MusicService.ROOT -> {
-                        val sectionsRaw = context.dataStore.get(
-                            AndroidAutoSectionsOrderKey,
-                            serializeSections(AndroidAutoSection.values().map { it to true })
-                        )
-                        val sections = deserializeSections(sectionsRaw)
-                        sections
-                            .filter { (_, enabled) -> enabled }
-                            .ifEmpty { listOf(AndroidAutoSection.LIKED to true) }
-                            .map { (section, _) ->
-                                when (section) {
-                                    AndroidAutoSection.LIKED -> browsableMediaItem(
+                        listOf(
+                                    browsableMediaItem(
                                         "${MusicService.PLAYLIST}/${PlaylistEntity.LIKED_PLAYLIST_ID}",
                                         context.getString(R.string.liked_songs),
                                         null,
                                         drawableUri(R.drawable.favorite),
                                         MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                                    )
-                                   AndroidAutoSection.SONGS -> browsableMediaItem(
+                                    ),
+                                    browsableMediaItem(
                                         MusicService.SONG,
                                         context.getString(R.string.songs),
                                         null,
                                         drawableUri(R.drawable.music_note),
                                         MediaMetadata.MEDIA_TYPE_PLAYLIST,
-                                    )
-                                    AndroidAutoSection.ARTISTS -> browsableMediaItem(
+                                    ),
+                                    browsableMediaItem(
                                         MusicService.ARTIST,
                                         context.getString(R.string.artists),
                                         null,
                                         drawableUri(R.drawable.artist),
                                         MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS,
-                                    )
-                                    AndroidAutoSection.ALBUMS -> browsableMediaItem(
+                                    ),
+                                    browsableMediaItem(
                                         MusicService.ALBUM,
                                         context.getString(R.string.albums),
                                         null,
                                         drawableUri(R.drawable.album),
                                         MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS,
-                                    )
-                                    AndroidAutoSection.PLAYLISTS -> browsableMediaItem(
+                                    ),
+                                    browsableMediaItem(
                                         MusicService.PLAYLIST,
                                         context.getString(R.string.playlists),
                                         null,
                                         drawableUri(R.drawable.queue_music),
                                         MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS,
-                                    )
-                                }
-                            }
+                                    ),
+                                )
                     }
 
 

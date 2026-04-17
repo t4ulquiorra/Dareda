@@ -11,7 +11,6 @@ import com.dare.innertube.models.SongItem
 import com.dare.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_ATV
 import com.dare.music.db.entities.Song
 import com.dare.music.db.entities.SongEntity
-import com.dare.music.ui.utils.resize
 import java.io.Serializable
 import java.time.LocalDateTime
 
